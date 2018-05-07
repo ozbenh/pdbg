@@ -56,6 +56,10 @@ struct pdbg_target {
 	bool probed;
 	struct list_node class_link;
 	void *priv;
+
+	/* Cache for most common targets */
+	struct pib *pib;
+	u64 pib_addr;
 };
 
 struct pdbg_target *require_target_parent(struct pdbg_target *target);

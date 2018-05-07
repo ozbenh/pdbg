@@ -111,13 +111,25 @@ static int pib_indirect_write(struct pib *pib, uint64_t addr, uint64_t data)
 	return 0;
 }
 
-int pib_read(struct pdbg_target *pib_dt, uint64_t addr, uint64_t *data)
+static inline struct pib *check_update_pib_cache(struct pdbg_target *tgt_dt)
+{
+	struct pdbg_target *pib_dt;
+
+	if (tgt_dt->pib)
+		return tgt_dt->pib;
+	tgt_dt->pib_addr = 0;
+	pib_dt = get_class_target_addr(tgt_dt, "pib", &tgt_dt->pib_addr);
+	tgt_dt->pib = target_to_pib(pib_dt);
+	return tgt_dt->pib;
+}
+
+int pib_read(struct pdbg_target *tgt_dt, uint64_t addr, uint64_t *data)
 {
 	struct pib *pib;
 	int rc;
 
-	pib_dt = get_class_target_addr(pib_dt, "pib", &addr);
-	pib = target_to_pib(pib_dt);
+	pib = check_update_pib_cache(tgt_dt);
+	addr += tgt_dt->pib_addr;
 	if (addr & PPC_BIT(0))
 		rc = pib_indirect_read(pib, addr, data);
 	else
@@ -125,13 +137,13 @@ int pib_read(struct pdbg_target *pib_dt, uint64_t addr, uint64_t *data)
 	return rc;
 }
 
-int pib_write(struct pdbg_target *pib_dt, uint64_t addr, uint64_t data)
+int pib_write(struct pdbg_target *tgt_dt, uint64_t addr, uint64_t data)
 {
 	struct pib *pib;
 	int rc;
 
-	pib_dt = get_class_target_addr(pib_dt, "pib", &addr);
-	pib = target_to_pib(pib_dt);
+	pib = check_update_pib_cache(tgt_dt);
+	addr += tgt_dt->pib_addr;
 	if (addr & PPC_BIT(0))
 		rc = pib_indirect_write(pib, addr, data);
 	else
@@ -140,14 +152,14 @@ int pib_write(struct pdbg_target *pib_dt, uint64_t addr, uint64_t data)
 }
 
 /* Wait for a SCOM register addr to match value & mask == data */
-int pib_wait(struct pdbg_target *pib_dt, uint64_t addr, uint64_t mask, uint64_t data)
+int pib_wait(struct pdbg_target *tgt_dt, uint64_t addr, uint64_t mask, uint64_t data)
 {
 	struct pib *pib;
 	uint64_t tmp;
 	int rc;
 
-	pib_dt = get_class_target_addr(pib_dt, "pib", &addr);
-	pib = target_to_pib(pib_dt);
+	pib = check_update_pib_cache(tgt_dt);
+	addr += tgt_dt->pib_addr;
 
 	do {
 		if (addr & PPC_BIT(0))
