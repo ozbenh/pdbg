@@ -93,8 +93,6 @@ static int clock_delay  = 0;
 static void *gpio_reg = NULL;
 static int mem_fd = 0;
 
-static void fsi_reset(struct fsi *fsi);
-
 static uint32_t readl(void *addr)
 {
 	asm volatile("" : : : "memory");
@@ -157,15 +155,20 @@ static void write_gpio(struct gpio_pin *pin, int val)
 static inline void clock_cycle(struct gpio_pin *pin, int num_clks)
 {
         int i;
-	volatile int j;
 
-	/* Need to introduce delays when inlining this function */
-	for (j = 0; j < clock_delay; j++);
         for (i = 0; i < num_clks; i++) {
                 write_gpio(pin, 0);
                 write_gpio(pin, 1);
         }
-	for (j = 0; j < clock_delay; j++);
+}
+
+static void clock_zeros(int num_clks)
+{
+	write_gpio(FSI_DAT, 1);
+	set_direction_out(FSI_DAT);
+	write_gpio(FSI_DAT_EN, 1);
+
+	clock_cycle(FSI_CLK, num_clks);
 }
 
 static uint8_t crc4(uint8_t c, int b)
@@ -187,9 +190,15 @@ static inline unsigned int fsi_read_bit(void)
 {
 	int x;
 
+#if 0
+	write_gpio(FSI_CLK, 0);
 	x = read_gpio(FSI_DAT);
+	write_gpio(FSI_CLK, 1);
+#else
 	clock_cycle(FSI_CLK, 1);
-
+	read_gpio(FSI_DAT);
+	x = read_gpio(FSI_DAT);
+#endif
 	/* The FSI hardware is active low (ie. inverted) */
 	return !(x & 1);
 }
@@ -223,17 +232,10 @@ static uint64_t fsi_d_poll(uint8_t slave_id)
 
 static void fsi_break(void)
 {
-	set_direction_out(FSI_CLK);
-	set_direction_out(FSI_DAT);
-	write_gpio(FSI_DAT_EN, 1);
-
-	/* Crank things - not sure if we need this yet */
-	write_gpio(FSI_CLK, 1);
-	write_gpio(FSI_DAT, 1); /* Data standby state */
-
-	/* Send break command */
+	clock_zeros(50);
 	write_gpio(FSI_DAT, 0);
 	clock_cycle(FSI_CLK, 256);
+	clock_zeros(16000);
 }
 
 /* Send a sequence, including start bit and crc */
@@ -242,12 +244,11 @@ static void fsi_send_seq(uint64_t seq, int len)
 	int i;
 	uint8_t crc;
 
-	set_direction_out(FSI_CLK);
+	write_gpio(FSI_DAT, 1);
 	set_direction_out(FSI_DAT);
 	write_gpio(FSI_DAT_EN, 1);
 
-	write_gpio(FSI_DAT, 1);
-	clock_cycle(FSI_CLK, 50);
+	clock_zeros(100);
 
 	/* Send the start bit */
 	write_gpio(FSI_DAT, 0);
@@ -264,8 +265,6 @@ static void fsi_send_seq(uint64_t seq, int len)
 	/* Send the CRC */
 	for (i = 3; i >= 0; i--)
 		fsi_send_bit(crc & (1ULL << i));
-
-	write_gpio(FSI_CLK, 0);
 }
 
 /* Read a response. Only supports upto 60 bits at the moment. */
@@ -276,8 +275,16 @@ static enum fsi_result fsi_read_resp(uint64_t *result, int len)
 	uint64_t resp = 0;
 	uint8_t ack = 0;
 
-	write_gpio(FSI_DAT_EN, 0);
+	/* Echo delay, do 10 clocks */
+	write_gpio(FSI_DAT, 1);
+	clock_cycle(FSI_CLK, 10);
+
+	/* Then change direction */
 	set_direction_in(FSI_DAT);
+	write_gpio(FSI_DAT_EN, 0);
+
+	/* Then another 5 clocks */
+	clock_cycle(FSI_CLK, 5);
 
 	/* Wait for start bit */
 	for (i = 0; i < 512; i++) {
@@ -286,8 +293,10 @@ static enum fsi_result fsi_read_resp(uint64_t *result, int len)
 			break;
 	}
 
+	if (i != 2)
+		printf("foo %d\n", i);
 	if (i == 512) {
-		PR_DEBUG("Timeout waiting for start bit\n");
+		printf("Timeout waiting for start bit\n");
 		return FSI_MERR_TIMEOUT;
 	}
 
@@ -330,13 +339,15 @@ static enum fsi_result fsi_d_poll_wait(uint8_t slave_id, uint64_t *resp, int len
 	enum fsi_result rc;
 
 	/* Poll for response if busy */
-	for (i = 0; i < 512; i++) {
+	for (i = 0; i < 1024; i++) {
+		clock_zeros(100);
 		seq = fsi_d_poll(slave_id) << 59;
 		fsi_send_seq(seq, 5);
 
 		if ((rc = fsi_read_resp(resp, len)) != FSI_BUSY)
-			break;
+			return rc;
 	}
+	printf("DPOLL timeout\n");
 
 	return rc;
 }
@@ -370,7 +381,7 @@ static int fsi_getcfam(struct fsi *fsi, uint32_t addr, uint32_t *value)
 		rc = fsi_d_poll_wait(0, &resp, 36);
 
 	if (rc != FSI_ACK) {
-		PR_DEBUG("getcfam error. Response: 0x%01x\n", rc);
+		printf("getcfam 0x%x error. Response: 0x%01x\n", addr, rc);
 		rc = -1;
 	}
 
@@ -409,23 +420,27 @@ static int fsi_putcfam(struct fsi *fsi, uint32_t addr, uint32_t data)
 		rc = fsi_d_poll_wait(0, &resp, 4);
 
 	if (rc != FSI_ACK)
-		PR_DEBUG("putcfam error. Response: 0x%01x\n", rc);
+		printf("putcfam 0x%x error. Response: 0x%01x\n", addr, rc);
 	else
 		rc = 0;
 
 	return rc;
 }
 
-static void fsi_reset(struct fsi *fsi)
+static int fsi_reset(struct fsi *fsi)
 {
+	int rc;
 	uint32_t val;
 
 	fsi_break();
 
 	/* Clear own id on the master CFAM to access hMFSI ports */
-	fsi_getcfam(fsi, 0x800, &val);
+	rc = fsi_getcfam(fsi, 0x800, &val);
+	if (rc)
+		return rc;
 	val &= ~(PPC_BIT32(6) | PPC_BIT32(7));
-	fsi_putcfam(fsi, 0x800, val);
+	rc = fsi_putcfam(fsi, 0x800, val);
+	return 0;
 }
 
 void fsi_destroy(struct pdbg_target *target)
@@ -434,12 +449,13 @@ void fsi_destroy(struct pdbg_target *target)
 	set_direction_out(FSI_DAT);
 	write_gpio(FSI_DAT_EN, 1);
 
+#if 0
 	/* Crank things - this is needed to use this tool for kicking off system boot  */
 	write_gpio(FSI_CLK, 1);
 	write_gpio(FSI_DAT, 1); /* Data standby state */
 	clock_cycle(FSI_CLK, 5000);
 	write_gpio(FSI_DAT_EN, 0);
-
+#endif
 	write_gpio(FSI_CLK, 0);
 	write_gpio(FSI_ENABLE, 0);
 	write_gpio(CRONUS_SEL, 0);
@@ -448,6 +464,7 @@ void fsi_destroy(struct pdbg_target *target)
 int bmcfsi_probe(struct pdbg_target *target)
 {
 	struct fsi *fsi = target_to_fsi(target);
+	int rc;
 
 	if (!mem_fd) {
 		mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
@@ -480,12 +497,22 @@ int bmcfsi_probe(struct pdbg_target *target)
 
 		set_direction_out(CRONUS_SEL);
 		set_direction_out(FSI_ENABLE);
+		write_gpio(FSI_DAT, 1);
+		write_gpio(FSI_CLK, 0);
+		write_gpio(FSI_DAT_EN, 0);
 		set_direction_out(FSI_DAT_EN);
-
+		set_direction_out(FSI_CLK);
+		set_direction_out(FSI_DAT);
 		write_gpio(FSI_ENABLE, 1);
 		write_gpio(CRONUS_SEL, 1);
 
-		fsi_reset(fsi);
+		clock_zeros(100);
+		rc = fsi_reset(fsi);
+		if (rc) {
+			printf("Reset failed\n");
+			return rc;
+		}
+		clock_zeros(100);
 	}
 
 	return 0;
