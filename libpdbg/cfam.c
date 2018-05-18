@@ -37,12 +37,6 @@
 #define FSI_SET_PIB_RESET_REG 0x7
 #define  FSI_SET_PIB_RESET PPC_BIT32(0)
 
-/* For some reason the FSI2PIB engine dies with frequent
- * access. Letting it have a bit of a rest seems to stop the
- * problem. This sets the number of usecs to sleep between SCOM
- * accesses. */
-#define FSI2PIB_RELAX	50
-
 /*
  * Bridge registers on XSCOM that allow generatoin
  * of OPB cycles
@@ -84,8 +78,6 @@ static int fsi2pib_getscom(struct pib *pib, uint64_t addr, uint64_t *value)
 {
 	uint32_t result;
 
-	usleep(FSI2PIB_RELAX);
-
 	/* Get scom works by putting the address in FSI_CMD_REG and
 	 * reading the result from FST_DATA[01]_REG. */
 	CHECK_ERR(fsi_write(&pib->target, FSI_CMD_REG, addr));
@@ -99,8 +91,6 @@ static int fsi2pib_getscom(struct pib *pib, uint64_t addr, uint64_t *value)
 
 static int fsi2pib_putscom(struct pib *pib, uint64_t addr, uint64_t value)
 {
-	usleep(FSI2PIB_RELAX);
-
 	CHECK_ERR(fsi_write(&pib->target, FSI_DATA0_REG, (value >> 32) & 0xffffffff));
 	CHECK_ERR(fsi_write(&pib->target, FSI_DATA1_REG, value & 0xffffffff));
 	CHECK_ERR(fsi_write(&pib->target, FSI_CMD_REG, FSI_CMD_REG_WRITE | addr));
