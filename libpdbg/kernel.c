@@ -144,3 +144,55 @@ static struct fsi kernel_fsi = {
 	.write = kernel_fsi_putcfam,
 };
 DECLARE_HW_UNIT(kernel_fsi);
+
+static int kernel_pib_getscom(struct pib *pib, uint64_t addr, uint64_t *value)
+{
+	int rc;
+
+	rc = pread(pib->fd, value, 8, addr);
+	if (rc < 0) {
+		warn("Failed to read scom");
+		return errno;
+	}
+	return 0;
+}
+
+static int kernel_pib_putscom(struct pib *pib, uint64_t addr, uint64_t value)
+{
+	int rc;
+
+	rc = pwrite(pib->fd, &value, 8, addr);
+	if (rc < 0) {
+		warn("Failed to write scom");
+		return errno;
+	}
+	return 0;
+}
+
+static int kernel_pib_probe(struct pdbg_target *target)
+{
+	struct pib *pib = target_to_pib(target);
+	const char *scom_path;
+
+	scom_path = dt_prop_get(target, "scom-path");
+	pib->fd = open(scom_path, O_RDWR | O_SYNC);
+	if (pib->fd < 0) {
+		err(errno, "Unable to open %s\n", scom_path);
+		return -1;
+	}
+	lseek(pib->fd, 0, SEEK_SET);
+	return 0;
+
+}
+
+struct pib kernel_pib = {
+	.target = {
+		.name =	"Kernel based FSI SCOM",
+		.compatible = "ibm,kernel-pib",
+		.class = "pib",
+		.probe = kernel_pib_probe,
+	},
+	.read = kernel_pib_getscom,
+	.write = kernel_pib_putscom,
+};
+DECLARE_HW_UNIT(kernel_pib);

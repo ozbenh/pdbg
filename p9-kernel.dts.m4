@@ -16,7 +16,8 @@
 		pib@1000 {
 			reg = <0x0 0x1000 0x7>;
 			index = <0x0>;
-			compatible = "ibm,fsi-pib", "ibm,power9-fsi-pib";
+			compatible = "ibm,kernel-pib";
+			scom-path = "/dev/scom1";
 			include(p9-pib.dts.m4)dnl
 		};
 
@@ -29,7 +30,8 @@
 			pib@1000 {
 				 reg = <0x0 0x1000 0x7>;
 				 index = <0x1>;
-				 compatible = "ibm,fsi-pib", "ibm,power9-fsi-pib";
+				 compatible = "ibm,kernel-pib";
+				 scom-path = "/dev/scom2";
 				 include(p9-pib.dts.m4)dnl
 			};
 		};
