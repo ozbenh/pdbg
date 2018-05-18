@@ -22,6 +22,7 @@
 
 #include <operations.h>
 #include <target.h>
+#include <sbefifo.h>
 
 #include "main.h"
 #include "progress.h"
@@ -34,7 +35,18 @@ static int getmem(uint64_t addr, uint64_t size, int ci)
 	int rc = 0;
 	buf = malloc(size);
 	assert(buf);
+
+	if (sbefifo_initialize() == 0) {
+		rc = sbefifo_getmem(true, addr, size, buf);
+		if (rc < 0)
+			goto bail;
+		if (write(STDOUT_FILENO, buf, rc) < 0)
+			return -errno;
+		return rc;
+	}
 	pdbg_for_each_class_target("adu", target) {
+		if (!target_selected(target->parent))
+			continue;
 		if (pdbg_target_probe(target) != PDBG_TARGET_ENABLED)
 			continue;
 
@@ -51,6 +63,7 @@ static int getmem(uint64_t addr, uint64_t size, int ci)
 		progress_end();
 		break;
 	}
+ bail:
 	free(buf);
 	return rc;
 
