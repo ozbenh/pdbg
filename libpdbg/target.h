@@ -123,6 +123,7 @@ struct pib {
 	int (*read)(struct pib *, uint64_t, uint64_t *);
 	int (*write)(struct pib *, uint64_t, uint64_t);
 	void *priv;
+	int fd; /* For kernel backend */
 };
 #define target_to_pib(x) container_of(x, struct pib, target)
 
