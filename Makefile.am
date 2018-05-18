@@ -52,7 +52,8 @@ libpdbg_la_SOURCES = \
 	libpdbg/adu.c \
 	libpdbg/device.c \
 	libpdbg/target.c \
-	libpdbg/htm.c
+	libpdbg/htm.c \
+	libpdbg/sbefifo.c
 
 M4_V = $(M4_V_$(V))
 M4_V_ = $(M4_V_$(AM_DEFAULT_VERBOSITY))

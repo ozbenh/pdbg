@@ -196,3 +196,47 @@ struct pib kernel_pib = {
 	.write = kernel_pib_putscom,
 };
 DECLARE_HW_UNIT(kernel_pib);
+
+static int kernel_sbefifo_message(struct sbefifo *sf,
+				  const void *in_msg, size_t in_size,
+				  void *out_resp, size_t *out_resp_size)
+{
+	int rc;
+
+	rc = write(sf->fd, in_msg, in_size);
+	if (rc < 0) {
+		warn("Failed to write message to SBE fifo");
+		return -errno;
+	}
+	rc = read(sf->fd, out_resp, *out_resp_size);
+	if (rc < 0) {
+		warn("Failed to read response from SBE fifo");
+		return -errno;
+	}
+	*out_resp_size = rc;
+	return 0;
+}
+
+static int kernel_sbefifo_probe(struct pdbg_target *target)
+{
+	struct sbefifo *sf = target_to_sbefifo(target);
+
+	sf->fd = open("/dev/sbefifo1", O_RDWR | O_SYNC);
+	if (sf->fd < 0) {
+		err(errno, "Unable to open driver\n");
+		return -1;
+	}
+	return 0;
+
+}
+
+struct sbefifo kernel_sbefifo = {
+	.target = {
+		.name =	"Kernel based FSI SBE FIFO",
+		.compatible = "ibm,kernel-sbefifo",
+		.class = "sbefifo",
+		.probe = kernel_sbefifo_probe,
+	},
+	.message = kernel_sbefifo_message,
+};
+DECLARE_HW_UNIT(kernel_sbefifo);

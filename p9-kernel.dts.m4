@@ -21,6 +21,12 @@
 			include(p9-pib.dts.m4)dnl
 		};
 
+		sbefifo@2000 { /* Bogus address */
+			reg = <0x0 0x2000 0x7>;
+			index = <0x0>;
+			compatible = "ibm,kernel-sbefifo";
+		};
+
 		hmfsi@100000 {
 			compatible = "ibm,fsi-hmfsi";
 			reg = <0x0 0x100000 0x8000>;

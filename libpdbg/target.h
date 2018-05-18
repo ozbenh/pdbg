@@ -118,6 +118,15 @@ struct adu {
 };
 #define target_to_adu(x) container_of(x, struct adu, target)
 
+struct sbefifo {
+	struct pdbg_target target;
+	int (*message)(struct sbefifo *, const void *in_msg, size_t in_size,
+		       void *out_data, size_t *out_data_size);
+	void *priv;
+	int fd;
+};
+#define target_to_sbefifo(x) container_of(x, struct sbefifo, target)
+
 struct pib {
 	struct pdbg_target target;
 	int (*read)(struct pib *, uint64_t, uint64_t *);
